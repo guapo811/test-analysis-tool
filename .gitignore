@@ -245,3 +245,9 @@ secrets.json
 *.swp
 *.swo
 *~.nib
+
+#miscellaneous
+Dyno Data/
+results/
+analysis_results/
+sample_data/
