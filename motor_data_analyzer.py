@@ -20,6 +20,7 @@ from datetime import datetime
 import gc
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
+import json
 
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -31,9 +32,12 @@ logger = logging.getLogger(__name__)
 class MotorDataAnalyzer:
     """Main class for analyzing BLDC motor dynamometer data."""
     
-    def __init__(self, data_folder: str, output_folder: str = "analysis_results"):
+    def __init__(self, data_folder: str, output_folder: str = "analysis_results", config_path: str = "config.json"):
+        # Load configuration
+        self.config = self.load_config(config_path)
+        
         self.data_folder = Path(data_folder)
-        self.output_folder = Path(output_folder)
+        self.output_folder = Path(output_folder or self.config['output_settings']['output_folder'])
         self.output_folder.mkdir(exist_ok=True)
         
         # Create subfolders for different types of outputs
@@ -45,21 +49,71 @@ class MotorDataAnalyzer:
             folder.mkdir(exist_ok=True)
             
         # Set up matplotlib for better plots
-        plt.style.use('seaborn-v0_8')
+        plot_style = self.config['plot_settings']['plot_style']
+        plt.style.use(plot_style)
         self.setup_plot_style()
+        
+    def load_config(self, config_path: str) -> Dict:
+        """Load configuration from JSON file."""
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            logger.info(f"Configuration loaded from {config_path}")
+            return config
+        except FileNotFoundError:
+            logger.warning(f"Config file {config_path} not found. Using default settings.")
+            return self.get_default_config()
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config file {config_path}: {e}")
+            return self.get_default_config()
+    
+    def get_default_config(self) -> Dict:
+        """Return default configuration if config file is not available."""
+        return {
+            'output_settings': {'output_folder': 'analysis_results'},
+            'plot_settings': {
+                'plot_style': 'seaborn-v0_8',
+                'figure_size': [12, 8],
+                'line_width': 1.5,
+                'grid_alpha': 0.3,
+                'font_sizes': {'title': 14, 'axis_label': 12, 'tick_label': 10, 'legend': 10}
+            },
+            'column_detection': {
+                'time_keywords': ['time', 'timestamp', 'sec', 'seconds'],
+                'vibration_keywords': ['vib', 'vibration', 'accel', 'acceleration', 'shake'],
+                'speed_keywords': ['speed', 'rpm', 'velocity', 'rotation'],
+                'torque_keywords': ['torque', 'force', 'moment'],
+                'power_keywords': ['power', 'watt', 'kw'],
+                'temperature_keywords': ['temp', 'temperature', 'thermal', 'heat'],
+                'current_keywords': ['current', 'amp', 'ampere', 'i_'],
+                'voltage_keywords': ['voltage', 'volt', 'v_', 'potential']
+            },
+            'data_settings': {'chunk_size': 10000, 'large_file_threshold_mb': 100},
+            'processing_settings': {'use_multiprocessing': True, 'max_workers': 4},
+            'vibration_analysis': {'max_vibration_columns': 4},
+            'individual_plots': {
+                'vibration_analysis': {'bins': 50},
+                'performance_overview': {'max_metrics': 6},
+                'time_series': {'max_series': 5},
+                'correlation_matrix': {'max_columns': 15}
+            }
+        }
         
     def setup_plot_style(self):
         """Configure matplotlib for professional-looking plots."""
+        plot_config = self.config['plot_settings']
+        font_sizes = plot_config['font_sizes']
+        
         plt.rcParams.update({
-            'figure.figsize': (12, 8),
+            'figure.figsize': tuple(plot_config['figure_size']),
             'figure.dpi': 100,
-            'axes.titlesize': 14,
-            'axes.labelsize': 12,
-            'xtick.labelsize': 10,
-            'ytick.labelsize': 10,
-            'legend.fontsize': 10,
-            'lines.linewidth': 1.5,
-            'grid.alpha': 0.3
+            'axes.titlesize': font_sizes['title'],
+            'axes.labelsize': font_sizes['axis_label'],
+            'xtick.labelsize': font_sizes['tick_label'],
+            'ytick.labelsize': font_sizes['tick_label'],
+            'legend.fontsize': font_sizes['legend'],
+            'lines.linewidth': plot_config['line_width'],
+            'grid.alpha': plot_config['grid_alpha']
         })
         
     def get_csv_files(self) -> List[Path]:
@@ -68,17 +122,21 @@ class MotorDataAnalyzer:
         logger.info(f"Found {len(csv_files)} CSV files")
         return sorted(csv_files)
         
-    def load_csv_efficiently(self, file_path: Path, chunksize: int = 10000) -> pd.DataFrame:
+    def load_csv_efficiently(self, file_path: Path, chunksize: int = None) -> pd.DataFrame:
         """
         Load CSV file efficiently to avoid memory issues.
         Uses chunking for very large files.
         """
+        if chunksize is None:
+            chunksize = self.config['data_settings']['chunk_size']
+            
         try:
             # First, try to load the entire file
             df = pd.read_csv(file_path, low_memory=False)
             
-            # If file is very large (>100MB), consider chunking
-            if df.memory_usage(deep=True).sum() > 100 * 1024 * 1024:
+            # If file is very large, consider chunking
+            threshold_mb = self.config['data_settings']['large_file_threshold_mb']
+            if df.memory_usage(deep=True).sum() > threshold_mb * 1024 * 1024:
                 logger.warning(f"Large file detected: {file_path.name}. Consider using chunked processing.")
                 
             return df
@@ -105,16 +163,17 @@ class MotorDataAnalyzer:
             'other': []
         }
         
-        # Define patterns for different types of measurements
+        # Define patterns for different types of measurements from config
+        col_config = self.config['column_detection']
         patterns = {
-            'time': ['time', 'timestamp', 'sec', 'seconds'],
-            'vibration': ['vib', 'vibration', 'accel', 'acceleration', 'shake'],
-            'speed': ['speed', 'rpm', 'velocity', 'rotation'],
-            'torque': ['torque', 'force', 'moment'],
-            'power': ['power', 'watt', 'kw'],
-            'temperature': ['temp', 'temperature', 'thermal', 'heat'],
-            'current': ['current', 'amp', 'ampere', 'i_'],
-            'voltage': ['voltage', 'volt', 'v_', 'potential']
+            'time': col_config['time_keywords'],
+            'vibration': col_config['vibration_keywords'],
+            'speed': col_config['speed_keywords'],
+            'torque': col_config['torque_keywords'],
+            'power': col_config['power_keywords'],
+            'temperature': col_config['temperature_keywords'],
+            'current': col_config['current_keywords'],
+            'voltage': col_config['voltage_keywords']
         }
         
         for col in df.columns:
@@ -215,7 +274,8 @@ class MotorDataAnalyzer:
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
         fig.suptitle(f'Vibration Analysis - {filename}', fontsize=16, fontweight='bold')
         
-        for i, col in enumerate(vibration_cols[:4]):  # Limit to 4 columns to fit subplots
+        max_vib_cols = self.config['vibration_analysis']['max_vibration_columns']
+        for i, col in enumerate(vibration_cols[:max_vib_cols]):  # Limit columns based on config
             if col in df.columns:
                 data = df[col].dropna()
                 
@@ -254,7 +314,8 @@ class MotorDataAnalyzer:
                     data = df[col].dropna()
                     if len(data) > 0:
                         ax = axes[i] if len(vibration_cols) > 1 else axes[0]
-                        ax.hist(data, bins=50, alpha=0.7, color='red', edgecolor='black')
+                        bins = self.config['individual_plots']['vibration_analysis']['bins']
+                        ax.hist(data, bins=bins, alpha=0.7, color='red', edgecolor='black')
                         ax.set_title(f'{col} Distribution')
                         ax.set_xlabel('Amplitude')
                         ax.set_ylabel('Frequency')
@@ -280,8 +341,9 @@ class MotorDataAnalyzer:
         if len(perf_metrics) == 0:
             return
             
-        # Limit to 6 metrics for subplot layout
-        perf_metrics = perf_metrics[:6]
+        # Limit metrics based on config
+        max_metrics = self.config['individual_plots']['performance_overview']['max_metrics']
+        perf_metrics = perf_metrics[:max_metrics]
         
         rows = 2
         cols = 3
@@ -334,7 +396,8 @@ class MotorDataAnalyzer:
         fig, ax = plt.subplots(figsize=(15, 8))
         
         # Normalize data for comparison
-        for col in important_cols[:5]:  # Limit to 5 for readability
+        max_series = self.config['individual_plots']['time_series']['max_series']
+        for col in important_cols[:max_series]:  # Limit based on config
             if col in df.columns:
                 data = df[col].dropna()
                 time_data = df[time_col].iloc[:len(data)].dropna()
@@ -363,7 +426,8 @@ class MotorDataAnalyzer:
             return
             
         # Limit to most important columns to keep plot readable
-        important_cols = numeric_cols[:15]  # Limit to 15 columns
+        max_cols = self.config['individual_plots']['correlation_matrix']['max_columns']
+        important_cols = numeric_cols[:max_cols]  # Limit based on config
         
         correlation_matrix = df[important_cols].corr()
         
@@ -506,7 +570,8 @@ class MotorDataAnalyzer:
         
         if use_multiprocessing and len(csv_files) > 1:
             # Use multiprocessing for large batches
-            with ProcessPoolExecutor(max_workers=min(4, mp.cpu_count())) as executor:
+            max_workers = min(self.config['processing_settings']['max_workers'], mp.cpu_count())
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 results = list(executor.map(self._process_single_file_wrapper, csv_files))
                 file_stats = [r for r in results if r is not None]
         else:
@@ -536,6 +601,7 @@ def main():
     parser.add_argument('--max-files', '-m', type=int, help='Maximum number of files to process')
     parser.add_argument('--sequential', action='store_true', help='Disable multiprocessing')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose logging')
+    parser.add_argument('--config', '-c', default='config.json', help='Configuration file path')
     
     args = parser.parse_args()
     
@@ -547,13 +613,16 @@ def main():
         sys.exit(1)
         
     # Initialize analyzer
-    analyzer = MotorDataAnalyzer(args.data_folder, args.output)
+    analyzer = MotorDataAnalyzer(args.data_folder, args.output, args.config)
     
     # Process files
     try:
+        # Get multiprocessing setting from config if not overridden by command line
+        use_mp = analyzer.config['processing_settings']['use_multiprocessing'] if not args.sequential else False
+        
         file_stats = analyzer.process_batch(
             max_files=args.max_files,
-            use_multiprocessing=not args.sequential
+            use_multiprocessing=use_mp
         )
         
         print(f"\nAnalysis Complete!")

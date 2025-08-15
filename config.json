@@ -1,0 +1,140 @@
+{
+  "data_settings": {
+    "data_folder": "./data",
+    "file_pattern": "*.csv",
+    "max_files": null,
+    "chunk_size": 10000,
+    "large_file_threshold_mb": 100
+  },
+  
+  "output_settings": {
+    "output_folder": "analysis_results",
+    "create_individual_plots": true,
+    "create_comparison_plots": true,
+    "create_reports": true,
+    "plot_format": "png",
+    "plot_dpi": 300,
+    "overwrite_existing": true
+  },
+  
+  "processing_settings": {
+    "use_multiprocessing": true,
+    "max_workers": 4,
+    "memory_efficient_mode": true,
+    "skip_errors": true,
+    "verbose_logging": false
+  },
+  
+  "column_detection": {
+    "auto_detect_columns": true,
+    "time_keywords": ["time", "timestamp", "sec", "seconds"],
+    "vibration_keywords": ["vib", "vibration", "accel", "acceleration", "shake"],
+    "speed_keywords": ["speed", "rpm", "velocity", "rotation"],
+    "torque_keywords": ["torque", "force", "moment"],
+    "power_keywords": ["power", "watt", "kw"],
+    "temperature_keywords": ["temp", "temperature", "thermal", "heat"],
+    "current_keywords": ["current", "amp", "ampere", "i_"],
+    "voltage_keywords": ["voltage", "volt", "v_", "potential"],
+    "case_sensitive": false
+  },
+  
+  "vibration_analysis": {
+    "calculate_rms": true,
+    "calculate_peak_to_peak": true,
+    "calculate_percentiles": true,
+    "percentile_levels": [95, 99],
+    "calculate_severity": true,
+    "max_vibration_columns": 4
+  },
+  
+  "plot_settings": {
+    "figure_size": [12, 8],
+    "plot_style": "seaborn-v0_8",
+    "line_width": 1.5,
+    "grid_alpha": 0.3,
+    "font_sizes": {
+      "title": 14,
+      "axis_label": 12,
+      "tick_label": 10,
+      "legend": 10
+    },
+    "colors": {
+      "vibration": "red",
+      "speed": "blue", 
+      "torque": "green",
+      "power": "orange",
+      "temperature": "purple",
+      "current": "brown",
+      "voltage": "pink"
+    }
+  },
+  
+  "individual_plots": {
+    "vibration_analysis": {
+      "enabled": true,
+      "time_series": true,
+      "distribution_histogram": true,
+      "show_statistics": true,
+      "show_rms_line": true,
+      "bins": 50
+    },
+    "performance_overview": {
+      "enabled": true,
+      "max_metrics": 6,
+      "show_mean_line": true,
+      "subplot_layout": [2, 3]
+    },
+    "time_series": {
+      "enabled": true,
+      "normalize_data": true,
+      "max_series": 5
+    },
+    "correlation_matrix": {
+      "enabled": true,
+      "max_columns": 15,
+      "color_map": "coolwarm",
+      "show_annotations": true,
+      "annotation_format": ".2f"
+    }
+  },
+  
+  "comparison_plots": {
+    "vibration_trends": {
+      "enabled": true,
+      "plot_types": ["mean", "std", "max", "rms"],
+      "show_markers": true
+    },
+    "file_statistics": {
+      "enabled": true,
+      "show_file_size": true,
+      "show_row_count": true
+    }
+  },
+  
+  "report_settings": {
+    "generate_text_report": true,
+    "include_file_summary": true,
+    "include_vibration_metrics": true,
+    "include_trend_analysis": true,
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "decimal_places": 4
+  },
+  
+  "performance_settings": {
+    "memory_cleanup": true,
+    "garbage_collection": true,
+    "suppress_warnings": true,
+    "progress_reporting": true
+  },
+  
+  "advanced_settings": {
+    "custom_column_mapping": {},
+    "data_filters": {
+      "remove_outliers": false,
+      "outlier_threshold": 3.0,
+      "interpolate_missing": false
+    },
+    "export_formats": ["png"],
+    "custom_plot_functions": []
+  }
+}
