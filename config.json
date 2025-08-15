@@ -127,6 +127,71 @@
     "progress_reporting": true
   },
   
+  "signal_processing": {
+    "enable_fft_analysis": true,
+    "fft_window": "hann",
+    "fft_nperseg": 1024,
+    "fft_overlap": 0.5,
+    "enable_filtering": true,
+    "filter_types": ["lowpass", "highpass", "bandpass"],
+    "default_filter_order": 4,
+    "enable_envelope_analysis": true,
+    "envelope_method": "hilbert"
+  },
+  
+  "data_quality": {
+    "enable_validation": true,
+    "enable_cleaning": true,
+    "missing_data_threshold": 0.1,
+    "interpolation_method": "linear",
+    "outlier_detection": {
+      "enabled": true,
+      "method": "iqr",
+      "threshold": 1.5,
+      "auto_remove": false
+    },
+    "data_integrity_checks": true,
+    "time_synchronization": true
+  },
+  
+  "predictive_analytics": {
+    "enable_anomaly_detection": true,
+    "anomaly_methods": ["isolation_forest", "one_class_svm"],
+    "contamination_rate": 0.1,
+    "enable_trend_analysis": true,
+    "trend_window_size": 100,
+    "enable_pattern_recognition": true,
+    "model_training": {
+      "auto_train": true,
+      "retrain_threshold": 0.8,
+      "validation_split": 0.2
+    }
+  },
+  
+  "motor_analysis": {
+    "enable_efficiency_calculation": true,
+    "enable_torque_ripple_analysis": true,
+    "torque_ripple_harmonics": [1, 2, 3, 6, 12],
+    "enable_harmonic_analysis": true,
+    "harmonic_orders": [1, 2, 3, 5, 7, 11, 13],
+    "enable_cogging_detection": true,
+    "temperature_correlation": true,
+    "load_mapping": {
+      "enabled": true,
+      "load_ranges": [0, 25, 50, 75, 100],
+      "efficiency_targets": [85, 90, 92, 90, 85]
+    }
+  },
+  
+  "error_handling": {
+    "enable_graceful_recovery": true,
+    "detailed_logging": true,
+    "auto_repair_attempts": 3,
+    "backup_corrupted_files": true,
+    "continue_on_error": true,
+    "error_report_generation": true
+  },
+  
   "advanced_settings": {
     "custom_column_mapping": {},
     "data_filters": {

@@ -1,6 +1,30 @@
+# Core dependencies
 pandas>=1.5.0
 numpy>=1.21.0
 matplotlib>=3.5.0
 seaborn>=0.11.0
-pathlib
-argparse
+
+# Scientific computing and signal processing
+scipy>=1.8.0
+
+# Machine learning for predictive analytics
+scikit-learn>=1.1.0
+joblib>=1.1.0
+
+# Standard library (no installation needed)
+# pathlib
+# argparse
+# json
+# logging
+# warnings
+# datetime
+# gc
+# multiprocessing
+# concurrent.futures
+
+# Optional: Enhanced plotting (uncomment if needed)
+# plotly>=5.0.0
+
+# Development and testing (optional)
+# pytest>=7.0.0
+# pytest-cov>=3.0.0

@@ -22,6 +22,13 @@ from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
 import json
 
+# Import new modules
+from signal_processing import SignalProcessor
+from data_quality import DataQualityManager
+from predictive_analytics import PredictiveAnalyzer
+from motor_analysis import MotorAnalyzer
+from error_handling import ErrorHandler, error_handler_decorator, ContextualErrorHandler
+
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 
@@ -52,6 +59,13 @@ class MotorDataAnalyzer:
         plot_style = self.config['plot_settings']['plot_style']
         plt.style.use(plot_style)
         self.setup_plot_style()
+        
+        # Initialize new analysis modules
+        self.signal_processor = SignalProcessor(self.config)
+        self.data_quality_manager = DataQualityManager(self.config)
+        self.predictive_analyzer = PredictiveAnalyzer(self.config)
+        self.motor_analyzer = MotorAnalyzer(self.config)
+        self.error_handler = ErrorHandler(self.config)
         
     def load_config(self, config_path: str) -> Dict:
         """Load configuration from JSON file."""
@@ -96,6 +110,48 @@ class MotorDataAnalyzer:
                 'performance_overview': {'max_metrics': 6},
                 'time_series': {'max_series': 5},
                 'correlation_matrix': {'max_columns': 15}
+            },
+            'signal_processing': {
+                'enable_fft_analysis': True,
+                'fft_window': 'hann',
+                'fft_nperseg': 1024,
+                'fft_overlap': 0.5,
+                'enable_filtering': True,
+                'enable_envelope_analysis': True
+            },
+            'data_quality': {
+                'enable_validation': True,
+                'enable_cleaning': True,
+                'missing_data_threshold': 0.1,
+                'interpolation_method': 'linear',
+                'outlier_detection': {'enabled': True, 'method': 'iqr', 'threshold': 1.5, 'auto_remove': False}
+            },
+            'predictive_analytics': {
+                'enable_anomaly_detection': True,
+                'anomaly_methods': ['isolation_forest'],
+                'contamination_rate': 0.1,
+                'enable_trend_analysis': True,
+                'trend_window_size': 100,
+                'enable_pattern_recognition': True,
+                'model_training': {'auto_train': False, 'validation_split': 0.2}
+            },
+            'motor_analysis': {
+                'enable_efficiency_calculation': True,
+                'enable_torque_ripple_analysis': True,
+                'torque_ripple_harmonics': [1, 2, 3, 6, 12],
+                'enable_harmonic_analysis': True,
+                'harmonic_orders': [1, 2, 3, 5, 7],
+                'enable_cogging_detection': True,
+                'temperature_correlation': True,
+                'load_mapping': {'enabled': True, 'load_ranges': [0, 25, 50, 75, 100]}
+            },
+            'error_handling': {
+                'enable_graceful_recovery': True,
+                'detailed_logging': True,
+                'auto_repair_attempts': 3,
+                'backup_corrupted_files': True,
+                'continue_on_error': True,
+                'error_report_generation': True
             }
         }
         
@@ -219,39 +275,372 @@ class MotorDataAnalyzer:
         return metrics
         
     def analyze_single_file(self, file_path: Path) -> Dict:
-        """Analyze a single CSV file and generate plots."""
+        """Analyze a single CSV file and generate comprehensive analysis."""
         logger.info(f"Analyzing {file_path.name}")
         
-        # Load data
-        df = self.load_csv_efficiently(file_path)
-        if df is None:
-            return None
+        with ContextualErrorHandler(self.error_handler, 
+                                  {'file_path': str(file_path), 'operation': 'file_analysis'}):
             
-        # Identify columns
-        column_mapping = self.identify_columns(df)
-        
-        # Calculate basic statistics
-        stats = {
-            'filename': file_path.name,
-            'rows': len(df),
-            'columns': len(df.columns),
-            'file_size_mb': file_path.stat().st_size / (1024 * 1024)
-        }
-        
-        # Calculate vibration metrics
-        if column_mapping['vibration']:
-            vibration_metrics = self.calculate_vibration_metrics(df, column_mapping['vibration'])
-            stats.update(vibration_metrics)
+            # Validate file integrity first
+            file_validation = self.error_handler.validate_file_integrity(file_path)
+            if not file_validation['is_valid']:
+                logger.error(f"File validation failed for {file_path.name}: {file_validation['issues_found']}")
+                self.error_handler.backup_corrupted_file(file_path, "File validation failed")
+                return None
             
-        # Generate individual plots
-        self.create_individual_plots(df, column_mapping, file_path.stem)
+            # Load data
+            df = self.load_csv_efficiently(file_path)
+            if df is None:
+                return None
+                
+            # Data quality analysis
+            quality_results = self.data_quality_manager.validate_data(df)
+            
+            # Clean data if enabled
+            if quality_results['status'] != 'failed':
+                df_cleaned, cleaning_report = self.data_quality_manager.clean_data(df)
+            else:
+                df_cleaned = df
+                cleaning_report = {'status': 'skipped', 'reason': 'validation_failed'}
+                
+            # Identify columns
+            column_mapping = self.identify_columns(df_cleaned)
+            
+            # Calculate basic statistics
+            stats = {
+                'filename': file_path.name,
+                'rows': len(df_cleaned),
+                'columns': len(df_cleaned.columns),
+                'file_size_mb': file_path.stat().st_size / (1024 * 1024),
+                'data_quality': quality_results,
+                'cleaning_report': cleaning_report
+            }
+            
+            # Set up signal processor with estimated sampling rate
+            if column_mapping['time']:
+                time_data = df_cleaned[column_mapping['time'][0]]
+                sampling_rate = self.signal_processor.estimate_sampling_rate(time_data)
+                self.signal_processor.set_sampling_rate(sampling_rate)
+                stats['estimated_sampling_rate'] = sampling_rate
+            
+            # Advanced signal processing analysis
+            signal_analysis_results = self.perform_signal_analysis(df_cleaned, column_mapping)
+            stats.update(signal_analysis_results)
+            
+            # Predictive analytics
+            predictive_results = self.perform_predictive_analysis(df_cleaned, column_mapping)
+            stats.update(predictive_results)
+            
+            # Motor-specific analysis
+            motor_analysis_results = self.perform_motor_analysis(df_cleaned, column_mapping)
+            stats.update(motor_analysis_results)
+            
+            # Calculate traditional vibration metrics
+            if column_mapping['vibration']:
+                vibration_metrics = self.calculate_vibration_metrics(df_cleaned, column_mapping['vibration'])
+                stats.update(vibration_metrics)
+                
+            # Generate comprehensive plots
+            self.create_comprehensive_plots(df_cleaned, column_mapping, file_path.stem, stats)
+            
+            # Clean up memory
+            del df, df_cleaned
+            gc.collect()
+            
+            return stats
+    
+    def perform_signal_analysis(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]]) -> Dict:
+        """Perform advanced signal processing analysis."""
+        signal_results = {}
         
-        # Clean up memory
-        del df
-        gc.collect()
+        try:
+            # FFT analysis on vibration signals
+            for col in column_mapping['vibration'][:2]:  # Limit to first 2 columns
+                if col in df.columns:
+                    time_col = column_mapping['time'][0] if column_mapping['time'] else None
+                    time_data = df[time_col] if time_col else None
+                    
+                    fft_result = self.signal_processor.compute_fft(df[col], time_data)
+                    if fft_result:
+                        signal_results[f'{col}_fft'] = fft_result
+                        
+                    # Envelope analysis
+                    envelope_result = self.signal_processor.envelope_analysis(df[col])
+                    if envelope_result:
+                        signal_results[f'{col}_envelope'] = envelope_result
+                        
+        except Exception as e:
+            logger.error(f"Signal analysis failed: {e}")
+            signal_results['signal_analysis_error'] = str(e)
+            
+        return signal_results
+    
+    def perform_predictive_analysis(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]]) -> Dict:
+        """Perform predictive analytics."""
+        predictive_results = {}
         
-        return stats
+        try:
+            # Anomaly detection
+            anomaly_result = self.predictive_analyzer.detect_anomalies(df)
+            if anomaly_result:
+                predictive_results['anomaly_detection'] = anomaly_result
+                
+            # Trend analysis on key parameters
+            trend_columns = []
+            for category in ['vibration', 'speed', 'torque', 'power']:
+                trend_columns.extend(column_mapping[category][:1])  # One column per category
+                
+            if trend_columns:
+                trend_result = self.predictive_analyzer.trend_analysis(df, trend_columns)
+                if trend_result:
+                    predictive_results['trend_analysis'] = trend_result
+                    
+            # Pattern recognition for vibration data
+            if column_mapping['vibration']:
+                pattern_result = self.predictive_analyzer.pattern_recognition(df, 'vibration')
+                if pattern_result:
+                    predictive_results['vibration_patterns'] = pattern_result
+                    
+        except Exception as e:
+            logger.error(f"Predictive analysis failed: {e}")
+            predictive_results['predictive_analysis_error'] = str(e)
+            
+        return predictive_results
+    
+    def perform_motor_analysis(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]]) -> Dict:
+        """Perform motor-specific analysis."""
+        motor_results = {}
         
+        try:
+            # Efficiency calculation
+            efficiency_result = self.motor_analyzer.calculate_efficiency(df)
+            if efficiency_result:
+                motor_results['efficiency_analysis'] = efficiency_result
+                
+            # Torque ripple analysis
+            if column_mapping['torque']:
+                ripple_result = self.motor_analyzer.analyze_torque_ripple(df)
+                if ripple_result:
+                    motor_results['torque_ripple'] = ripple_result
+                    
+            # Harmonic analysis
+            if column_mapping['current']:
+                harmonic_result = self.motor_analyzer.analyze_harmonics(df, 'current')
+                if harmonic_result:
+                    motor_results['current_harmonics'] = harmonic_result
+                    
+            # Cogging torque detection
+            cogging_result = self.motor_analyzer.detect_cogging_torque(df)
+            if cogging_result:
+                motor_results['cogging_analysis'] = cogging_result
+                
+            # Temperature correlation
+            if column_mapping['temperature']:
+                temp_result = self.motor_analyzer.analyze_temperature_correlation(df)
+                if temp_result:
+                    motor_results['temperature_correlation'] = temp_result
+                    
+        except Exception as e:
+            logger.error(f"Motor analysis failed: {e}")
+            motor_results['motor_analysis_error'] = str(e)
+            
+        return motor_results
+    
+    def create_comprehensive_plots(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]], 
+                                 filename: str, analysis_results: Dict):
+        """Create comprehensive plots including new analysis results."""
+        # Create original plots
+        self.create_individual_plots(df, column_mapping, filename)
+        
+        # Create advanced signal processing plots
+        self.create_signal_processing_plots(df, column_mapping, filename, analysis_results)
+        
+        # Create motor analysis plots
+        self.create_motor_analysis_plots(df, column_mapping, filename, analysis_results)
+        
+        # Create predictive analytics plots
+        self.create_predictive_plots(df, column_mapping, filename, analysis_results)
+    
+    def create_signal_processing_plots(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]], 
+                                     filename: str, analysis_results: Dict):
+        """Create signal processing plots."""
+        try:
+            for col in column_mapping['vibration'][:2]:
+                # FFT plots
+                fft_key = f'{col}_fft'
+                if fft_key in analysis_results:
+                    fig = self.signal_processor.plot_fft_analysis(
+                        analysis_results[fft_key], 
+                        f'FFT Analysis - {col} - {filename}'
+                    )
+                    if fig:
+                        fig.savefig(self.individual_plots_folder / f'{filename}_{col}_fft.png', 
+                                  dpi=300, bbox_inches='tight')
+                        plt.close(fig)
+                        
+                # Envelope plots
+                envelope_key = f'{col}_envelope'
+                if envelope_key in analysis_results:
+                    fig = self.signal_processor.plot_envelope_analysis(
+                        analysis_results[envelope_key], 
+                        df[col],
+                        f'Envelope Analysis - {col} - {filename}'
+                    )
+                    if fig:
+                        fig.savefig(self.individual_plots_folder / f'{filename}_{col}_envelope.png', 
+                                  dpi=300, bbox_inches='tight')
+                        plt.close(fig)
+                        
+        except Exception as e:
+            logger.error(f"Signal processing plots failed: {e}")
+    
+    def create_motor_analysis_plots(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]], 
+                                  filename: str, analysis_results: Dict):
+        """Create motor-specific analysis plots."""
+        try:
+            # Efficiency plots
+            if 'efficiency_analysis' in analysis_results:
+                efficiency_data = analysis_results['efficiency_analysis']
+                if 'efficiency_data' in efficiency_data:
+                    self._plot_efficiency_analysis(efficiency_data, filename)
+                    
+            # Torque ripple plots
+            if 'torque_ripple' in analysis_results:
+                ripple_data = analysis_results['torque_ripple']
+                if 'harmonic_analysis' in ripple_data:
+                    self._plot_torque_ripple_analysis(ripple_data, filename)
+                    
+        except Exception as e:
+            logger.error(f"Motor analysis plots failed: {e}")
+    
+    def create_predictive_plots(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]], 
+                              filename: str, analysis_results: Dict):
+        """Create predictive analytics plots."""
+        try:
+            # Anomaly detection plots
+            if 'anomaly_detection' in analysis_results:
+                anomaly_data = analysis_results['anomaly_detection']
+                if anomaly_data.get('status') == 'completed':
+                    self._plot_anomaly_detection(df, anomaly_data, filename)
+                    
+        except Exception as e:
+            logger.error(f"Predictive plots failed: {e}")
+    
+    def _plot_efficiency_analysis(self, efficiency_data: Dict, filename: str):
+        """Plot efficiency analysis results."""
+        if 'efficiency_data' not in efficiency_data:
+            return
+            
+        data = efficiency_data['efficiency_data']
+        
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle(f'Motor Efficiency Analysis - {filename}', fontsize=16, fontweight='bold')
+        
+        # Efficiency vs time
+        axes[0, 0].plot(data['efficiency'])
+        axes[0, 0].set_title('Efficiency vs Time')
+        axes[0, 0].set_ylabel('Efficiency (%)')
+        axes[0, 0].grid(True, alpha=0.3)
+        
+        # Power comparison
+        axes[0, 1].plot(data['electrical_power'], label='Electrical Power')
+        axes[0, 1].plot(data['mechanical_power'], label='Mechanical Power')
+        axes[0, 1].set_title('Power Comparison')
+        axes[0, 1].set_ylabel('Power (W)')
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
+        
+        # Efficiency histogram
+        valid_eff = [e for e in data['efficiency'] if e > 0]
+        if valid_eff:
+            axes[1, 0].hist(valid_eff, bins=30, alpha=0.7)
+            axes[1, 0].set_title('Efficiency Distribution')
+            axes[1, 0].set_xlabel('Efficiency (%)')
+            axes[1, 0].set_ylabel('Frequency')
+            axes[1, 0].grid(True, alpha=0.3)
+        
+        # Statistics
+        if 'efficiency_statistics' in efficiency_data:
+            stats = efficiency_data['efficiency_statistics']
+            axes[1, 1].text(0.1, 0.8, f"Mean: {stats['mean_efficiency']:.2f}%", transform=axes[1, 1].transAxes)
+            axes[1, 1].text(0.1, 0.6, f"Max: {stats['max_efficiency']:.2f}%", transform=axes[1, 1].transAxes)
+            axes[1, 1].text(0.1, 0.4, f"Min: {stats['min_efficiency']:.2f}%", transform=axes[1, 1].transAxes)
+            axes[1, 1].text(0.1, 0.2, f"Std: {stats['std_efficiency']:.2f}%", transform=axes[1, 1].transAxes)
+        axes[1, 1].set_title('Efficiency Statistics')
+        axes[1, 1].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(self.individual_plots_folder / f'{filename}_efficiency_analysis.png', 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_torque_ripple_analysis(self, ripple_data: Dict, filename: str):
+        """Plot torque ripple analysis results."""
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle(f'Torque Ripple Analysis - {filename}', fontsize=16, fontweight='bold')
+        
+        # Display ripple statistics
+        if 'ripple_statistics' in ripple_data:
+            stats = ripple_data['ripple_statistics']
+            axes[0, 0].text(0.1, 0.8, f"RMS Ripple: {stats['rms_ripple']:.3f} Nm", transform=axes[0, 0].transAxes)
+            axes[0, 0].text(0.1, 0.6, f"P2P Ripple: {stats['peak_to_peak_ripple']:.3f} Nm", transform=axes[0, 0].transAxes)
+            axes[0, 0].text(0.1, 0.4, f"Ripple Factor: {stats['ripple_factor']:.2f}%", transform=axes[0, 0].transAxes)
+            axes[0, 0].text(0.1, 0.2, f"Mean Torque: {stats['mean_torque']:.3f} Nm", transform=axes[0, 0].transAxes)
+        axes[0, 0].set_title('Ripple Statistics')
+        axes[0, 0].axis('off')
+        
+        # Hide other subplots for now
+        for i in range(1, 4):
+            axes.flat[i].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(self.individual_plots_folder / f'{filename}_torque_ripple.png', 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    def _plot_anomaly_detection(self, df: pd.DataFrame, anomaly_data: Dict, filename: str):
+        """Plot anomaly detection results."""
+        if 'summary' not in anomaly_data:
+            return
+            
+        summary = anomaly_data['summary']
+        anomaly_indices = summary.get('anomaly_indices', [])
+        
+        if not anomaly_indices:
+            return
+            
+        # Plot first numeric column with anomalies highlighted
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) == 0:
+            return
+            
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        col = numeric_cols[0]
+        data = df[col].dropna()
+        
+        # Plot normal data
+        normal_mask = ~data.index.isin(anomaly_indices)
+        ax.scatter(data.index[normal_mask], data.values[normal_mask], 
+                  alpha=0.6, c='blue', label='Normal', s=10)
+        
+        # Plot anomalies
+        anomaly_mask = data.index.isin(anomaly_indices)
+        if anomaly_mask.any():
+            ax.scatter(data.index[anomaly_mask], data.values[anomaly_mask], 
+                      alpha=0.8, c='red', label='Anomaly', s=20)
+        
+        ax.set_title(f'Anomaly Detection - {col} - {filename}')
+        ax.set_xlabel('Sample Index')
+        ax.set_ylabel(col)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(self.individual_plots_folder / f'{filename}_anomaly_detection.png', 
+                   dpi=300, bbox_inches='tight')
+        plt.close()
+
     def create_individual_plots(self, df: pd.DataFrame, column_mapping: Dict[str, List[str]], filename: str):
         """Create comprehensive plots for individual file analysis."""
         
